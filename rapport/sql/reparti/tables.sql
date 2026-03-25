@@ -9,13 +9,30 @@ IF  EXISTS
 (SELECT name FROM sys.databases WHERE name = N'IBDR_SAR') 
 BEGIN 
   EXEC msdb.dbo.sp_delete_database_backuphistory @database_name = N'IBDR_SAR' 
-  DROP DATABASE IBDR_SAR 
+  ALTER DATABASE IBDR_SAR SET  SINGLE_USER WITH ROLLBACK IMMEDIATE
+  DROP DATABASE IBDR_SAR
 END 
 GO 
 CREATE DATABASE IBDR_SAR 
 GO  
 USE IBDR_SAR 
 GO
+
+--------------------------------------
+/* IBDR 2013 – Groupe SAR           */
+/* Création de la table Succursales */
+/* Auteur  : AMIARD Raphaël - SAR   */
+/* Testeur : AMIARD Raphaël - SAR   */
+/*           MUNOZ Yupanqui - SAR   */
+--------------------------------------
+IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'Succursales' AND xtype = 'U')  
+DROP TABLE Succursales;
+CREATE TABLE Succursales (
+	NomServeur		   NVARCHAR(128) NOT NULL,
+	NomServeurFull	   NVARCHAR(128) NOT NULL,
+	SiegeSocial		   BIT NOT NULL,
+	CONSTRAINT PK_SUCCURSALES PRIMARY KEY ( NomServeurFull )
+)
 
 -------------------------------------
 /* IBDR 2013 – Groupe SAR          */
@@ -226,21 +243,26 @@ IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'Abonnement' AND xtype = 'U')
 DROP TABLE Abonnement ;
 CREATE TABLE Abonnement (
 	Id INT NOT NULL IDENTITY(0,1),
+	Succursale NVARCHAR(128) NOT NULL,
     Solde SMALLMONEY NOT NULL,
 	DateDebut DATETIME NOT NULL,
 	DateFin DATETIME NOT NULL,
+	SuccursaleClient NVARCHAR(128) NOT NULL,
 	NomClient NVARCHAR(64) NOT NULL,
 	PrenomClient NVARCHAR(64) NOT NULL,
 	MailClient NVARCHAR(128) NOT NULL,
 	TypeAbonnement NVARCHAR(32) NOT NULL,
 
 	CONSTRAINT PK_ABONNEMENT 
-		PRIMARY KEY ( Id ),
+		PRIMARY KEY ( Id , Succursale ),
 	CONSTRAINT FK_ABONNEMENT_TYPEABONNEMENT
 		FOREIGN KEY ( TypeAbonnement ) REFERENCES TypeAbonnement ( Nom ),
 	CONSTRAINT FK_ABONNEMENT_CLIENT
 		FOREIGN KEY ( NomClient, PrenomClient, MailClient )
-		REFERENCES Client ( Nom, Prenom, Mail )
+		REFERENCES Client ( Nom, Prenom, Mail ),
+	CONSTRAINT FK_ABONNEMENT_SUCCURSALE
+		FOREIGN KEY ( Succursale )
+		REFERENCES Succursales ( NomServeurFull )
 )
 
 -------------------------------------
@@ -255,6 +277,7 @@ DROP TABLE Location ;
 CREATE TABLE Location (
 	Id                INT NOT NULL IDENTITY(0,1),
 	AbonnementId      INT NOT NULL,
+	AbonnementSuc     NVARCHAR(128) NOT NULL,
 	DateLocation      DATETIME NOT NULL,
 	DateRetourPrev    DATETIME NOT NULL,
 	DateRetourEff     DATETIME,
@@ -265,8 +288,8 @@ CREATE TABLE Location (
 	CONSTRAINT FK_LOCATION_FILMSTOCK
 		FOREIGN KEY ( FilmStockId ) REFERENCES FilmStock ( Id ) ON DELETE CASCADE,
 	CONSTRAINT FK_LOCATION_ABONNEMENT
-		FOREIGN KEY ( AbonnementId ) 
-		REFERENCES Abonnement ( Id )
+		FOREIGN KEY ( AbonnementId , AbonnementSuc) 
+		REFERENCES Abonnement ( Id , Succursale )
 )
 
 -------------------------------------
@@ -279,13 +302,14 @@ IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'RelanceDecouvert' AND xtype =
 DROP TABLE RelanceDecouvert ;
 CREATE TABLE RelanceDecouvert (
 	AbonnementId   INT NOT NULL,
+	AbonnementSuc  NVARCHAR(128) NOT NULL,
 	Date           DATETIME NOT NULL,
 	Niveau         SMALLINT NOT NULL,
 
 	CONSTRAINT PK_RELANCEDECOUVERT PRIMARY KEY ( AbonnementId ),
 	CONSTRAINT FK_RELANCEDECOUVERT 
-		FOREIGN KEY ( AbonnementId )
-		REFERENCES Abonnement ( Id )
+		FOREIGN KEY ( AbonnementId, AbonnementSuc )
+		REFERENCES Abonnement ( Id , Succursale )
 )
 
 -------------------------------------
@@ -353,6 +377,7 @@ CREATE TABLE FilmDistinction (
 IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'PersonneDistinction' AND xtype = 'U')  
 DROP TABLE PersonneDistinction ;
 CREATE TABLE PersonneDistinction (
+	Id				INTEGER IDENTITY(0, 1),
 	Annee           SMALLINT NOT NULL,
 	TitreVF         NVARCHAR(128) NOT NULL,
 	AnneeSortie     SMALLINT NOT NULL,
@@ -361,6 +386,8 @@ CREATE TABLE PersonneDistinction (
     Alias           NVARCHAR(64),
 	NomDistinction  NVARCHAR(128) NOT NULL,
 
+
+	CONSTRAINT PK_PERSONNEDISTINCTION PRIMARY KEY ( Id ),
 	CONSTRAINT FK_ACTEURDISTINCTION_FILM
 		FOREIGN KEY ( TitreVF, AnneeSortie )
 		REFERENCES Film ( TitreVF, AnneeSortie ),
@@ -381,12 +408,15 @@ CREATE TABLE PersonneDistinction (
 IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'FilmActeur' AND xtype = 'U')  
 DROP TABLE FilmActeur ;
 CREATE TABLE FilmActeur (
+	Id				INTEGER IDENTITY(0,1),
 	TitreVF         NVARCHAR(128) NOT NULL,
 	AnneeSortie      SMALLINT NOT NULL,
     Nom             NVARCHAR(64) NOT NULL,
     Prenom          NVARCHAR(64) NOT NULL,
     Alias           NVARCHAR(64),
 
+	CONSTRAINT PK_FILMACTEUR
+		PRIMARY KEY ( Id ),
 	CONSTRAINT FK_FILMACTEUR_FILM
 		FOREIGN KEY ( TitreVF, AnneeSortie )
         REFERENCES Film ( TitreVF, AnneeSortie ),
@@ -404,12 +434,14 @@ CREATE TABLE FilmActeur (
 IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'FilmRealisateur' AND xtype = 'U')  
 DROP TABLE FilmRealisateur ;
 CREATE TABLE FilmRealisateur (
+	Id				INTEGER IDENTITY(0,1),
 	TitreVF         NVARCHAR(128) NOT NULL,
 	AnneeSortie     SMALLINT NOT NULL,
     Nom             NVARCHAR(64) NOT NULL,
     Prenom          NVARCHAR(64) NOT NULL,
     Alias           NVARCHAR(64),
 
+	CONSTRAINT PK_FILMREALISATEUR PRIMARY KEY ( Id ),
 	CONSTRAINT FK_FILMREALISATEUR_FILM
 		FOREIGN KEY ( TitreVF, AnneeSortie )
         REFERENCES Film ( TitreVF, AnneeSortie ),
@@ -431,6 +463,8 @@ CREATE TABLE FilmGenre (
 	AnneeSortie     SMALLINT NOT NULL,
 	NomGenre        NVARCHAR(64) NOT NULL,
 
+
+	CONSTRAINT PK_FILMGENRE PRIMARY KEY ( TitreVF, AnneeSortie, NomGenre),
 	CONSTRAINT FK_FILMGENRE_GENRE
 	FOREIGN KEY ( NomGenre ) REFERENCES Genre ( Nom ),
 	CONSTRAINT FK_FILMGENRE_FILM
@@ -450,6 +484,7 @@ CREATE TABLE EditionLangueSousTitres (
 	IdEdition INT NOT NULL,
 	NomLangue  NVARCHAR(64) NOT NULL,
 
+	CONSTRAINT PK_EDITIONLANGUESOUSTITRES PRIMARY KEY (IdEdition, NomLangue),
 	CONSTRAINT FK_SOUSTITRES_EDITION 
 		FOREIGN KEY ( IdEdition ) REFERENCES Edition ( Id ) ON DELETE CASCADE,
 	CONSTRAINT FK_SOUSTITRES_LANGUE 
@@ -468,6 +503,8 @@ CREATE TABLE EditionLangueAudio (
 	IdEdition INT NOT NULL,
 	NomLangue  NVARCHAR(64) NOT NULL,
 
+	CONSTRAINT PK_EDITIONLANGUEAUDIO
+		PRIMARY KEY ( IdEdition, NomLangue ),
 	CONSTRAINT FK_AUDIO_EDITION 
 		FOREIGN KEY ( IdEdition ) REFERENCES Edition ( Id ) ON DELETE CASCADE,
 	CONSTRAINT FK_AUDIO_LANGUE 
@@ -485,7 +522,9 @@ DROP TABLE EditeurEdition ;
 CREATE TABLE EditeurEdition (
 	IdEdition INT NOT NULL,
 	NomEditeur NVARCHAR(64) NOT NULL,
-
+	
+	CONSTRAINT PK_EDITEUREDITION 
+		PRIMARY KEY ( IdEdition, NomEditeur ),
 	CONSTRAINT FK_EDITEUREDITION_EDITION
 		FOREIGN KEY ( IdEdition ) REFERENCES Edition ( Id ),
 	CONSTRAINT FK_EDITEUREDITION_EDITEUR
@@ -501,16 +540,42 @@ CREATE TABLE EditeurEdition (
 IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'FilmProducteur' AND xtype = 'U')  
 DROP TABLE FilmProducteur ;
 CREATE TABLE FilmProducteur (
+	Id				   INTEGER IDENTITY(0, 1),
 	TitreVF            NVARCHAR(128) NOT NULL,
 	AnneeSortie        SMALLINT NOT NULL,
     NomProducteur      NVARCHAR(64) NOT NULL,
     PrenomProducteur   NVARCHAR(64) NOT NULL,
     AliasProducteur    NVARCHAR(64),
 
+	CONSTRAINT PK_FILMPRODUCTEUR PRIMARY KEY ( Id ),
 	CONSTRAINT FK_FILMPRODUCTEUR_FILM
 		FOREIGN KEY ( TitreVF, AnneeSortie )
         REFERENCES Film ( TitreVF, AnneeSortie ),
 	CONSTRAINT FK_FILMPRODUCTEUR_PRODUCTEUR
 		FOREIGN KEY ( NomProducteur, PrenomProducteur, AliasProducteur )
 		REFERENCES Personne ( Nom, Prenom, Alias )
+)
+
+IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'Listenoire' AND xtype = 'U')  
+DROP TABLE Listenoire ;
+CREATE TABLE Listenoire (
+	NomClient               NVARCHAR(64) NOT NULL,
+	PrenomClient            NVARCHAR(64) NOT NULL,
+	MailClient              NVARCHAR(128) NOT NULL,
+
+	CONSTRAINT PK_LISTENOIRE PRIMARY KEY ( NomClient, PrenomClient, MailClient )
+)
+
+IF EXISTS  (SELECT 1 FROM sysobjects WHERE name = 'Abonnement_Partage' AND xtype = 'U')  
+DROP TABLE Abonnement_Partage;
+CREATE TABLE Abonnement_Partage(
+	IdAbonnement	INTEGER,
+	SuccursaleAbo	NVARCHAR(128) NOT NULL,
+	SuccursaleDest	NVARCHAR(128) NOT NULL,
+	
+	CONSTRAINT PK_CLIENTS_PARTAGES 
+		PRIMARY KEY ( IdAbonnement, SuccursaleAbo ),
+	CONSTRAINT FK_ABONNEMENT_PARTAGE_ABONNEMENT
+		FOREIGN KEY ( IdAbonnement, SuccursaleAbo ) 
+		REFERENCES Abonnement( Id, Succursale )
 )
